@@ -1,7 +1,7 @@
 # Gambl/new_interpreter.py
 # Evaluation and Interpretation Logic
 
-from ast_nodes import Number, Variable, BinOp, UnaryOp, Assignment, If, While, FunctionDef, Call, FunctionValue, ReturnValue, Block
+from ast_nodes import Number, Variable, BinOp, UnaryOp, Assignment, If, While, FunctionDef, Call, FunctionValue, ReturnValue, Block, ArrayLiteral, Index, AssignIndex, String
 from environment import Env
 
 def evaluate(node, env):
@@ -18,6 +18,9 @@ def evaluate(node, env):
     if isinstance(node, Number):
         return node.value
     
+    elif isinstance(node, String):
+        return node.value
+
     elif isinstance(node, Variable):
         val = env.get(node.name)
     # If it's a Reference, get the value
@@ -82,6 +85,25 @@ def evaluate(node, env):
             return -operand
         else:
             raise RuntimeError(f"Unknown unary operator: {node.op}")
+    
+    elif isinstance(node, ArrayLiteral):
+        return [evaluate(x, env) for x in node.items]
+
+    elif isinstance(node, Index):
+        base = evaluate(node.base, env)
+        idx = evaluate(node.index, env)
+        if not isinstance(idx, int):
+            raise TypeError("Index must be integer")
+        return base[idx]
+    
+    elif isinstance(node, AssignIndex):
+        base = evaluate(node.base, env)
+        idx = evaluate(node.index, env)
+        expr_val = evaluate(node.expr, env)
+        if not isinstance(idx, int):
+            raise TypeError("Index must be integer")
+        base[idx] = expr_val
+        return None  # Assignment returns no value
         
     elif isinstance(node, Assignment):
         value = evaluate(node.value, env)
@@ -104,18 +126,19 @@ def evaluate(node, env):
         return None  # Defining a function returns nothing
     
     elif isinstance(node, Call):
-        # Look up the function
         func = env.get(node.name)
+        args = [evaluate(arg, env) for arg in node.args]
+        # Built-in function (Python callable)
+        if callable(func) and not isinstance(func, FunctionValue):
+            return func(*args)
+        # User-defined function
         if not isinstance(func, FunctionValue):
             raise RuntimeError(f"{node.name} is not a function")
-        # Check argument count
         if len(node.args) != len(func.params):
             raise RuntimeError(f"Function {node.name} expects {len(func.params)} arguments, got {len(node.args)}")
-        # Evaluate args and handle ref/value
         arg_values = []
         for arg, (is_ref, pname) in zip(node.args, func.params):
             if is_ref:
-                # For ref, wrap as Reference
                 if isinstance(arg, Variable):
                     arg_values.append(__import__('environment').Reference(env, arg.name))
                 else:
@@ -126,20 +149,17 @@ def evaluate(node, env):
                     arg_values.append(val.get())
                 else:
                     arg_values.append(val)
-        # New environment for the call
         func_env = Env()
-        func_env.variables = func.env.variables.copy()  # Copy closure
-        # Bind params
+        func_env.variables = env.variables.copy()
         for (is_ref, pname), arg_val in zip(func.params, arg_values):
             func_env.define(pname, arg_val)
-        # Run function body
         result = None
         for stmt in func.body:
             if isinstance(stmt, ReturnValue):
                 return evaluate(stmt.value, func_env)
             else:
                 result = evaluate(stmt, func_env)
-        return result  # Last result if no return
+        return result
     
     elif isinstance(node, ReturnValue):
         return evaluate(node.value, env)
@@ -153,11 +173,31 @@ def evaluate(node, env):
     else:
         raise RuntimeError(f"Unknown AST node: {type(node)}")
 
+def _to_str(val):
+    if isinstance(val, list):
+        return "[" + ", ".join(_to_str(x) for x in val) + "]"
+    return str(val)
+
+def _builtin_print(*args):
+    s = " ".join(_to_str(a) for a in args)
+    print(s)
+    return None
+
+def gambl_len(x):
+    # If x is a String AST node, use its value
+    if isinstance(x, String):
+        x = x.value
+    if isinstance(x, (list, str)):
+        return len(x)
+    raise TypeError("object of type 'int' has no len()")
+
 def repl():
     """Interactive loop."""
     from parser import parse
     
     env = Env()
+    env.set("len", gambl_len)
+    env.set("print", _builtin_print)
     print("Welcome to the Gambl interpreter. Type 'quit' to exit.")
     
     while True:

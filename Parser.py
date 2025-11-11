@@ -1,6 +1,6 @@
 # Gambl/Parser.py
 # Parsing Logic - Converts tokens to Abstract Syntax Tree
-from ast_nodes import Number, Variable, BinOp, UnaryOp, Assignment, If, While, FunctionDef, Call, FunctionValue, ReturnValue, Block
+from ast_nodes import Number, Variable, BinOp, UnaryOp, Assignment, If, While, FunctionDef, Call, FunctionValue, ReturnValue, Block, ArrayLiteral, Index, AssignIndex, String
 from lexer import lex
 
 class Parser:
@@ -28,6 +28,21 @@ class Parser:
     def peek_val(self):
         """Get the value of the current token."""
         return self.current()[1]
+    
+    def check(self, kind):
+        """Return True if the current token is of the given kind."""
+        return self.peek_kind() == kind
+
+    def expect(self, kind):
+        """Consume a token of the given kind, or raise an error."""
+        return self.eat_kind(kind)
+
+    def match(self, kind):
+        """If the current token is of the given kind, consume it and return True; else False."""
+        if self.check(kind):
+            self.eat_kind(kind)
+            return True
+        return False
 
     def advance(self):
         """Move to the next token."""
@@ -93,42 +108,59 @@ class Parser:
         return None
 
     def parse_factor(self):
-        """Parse a factor: function call, parenthesized expression, number, variable, or unary operation."""
-        # Try function call first
-        call = self.parse_call()
-        if call:
-            return call
-            
-        if self.peek_val() == "(":
-            self.eat_val("(")
-            node = self.parse_expr()
-            self.eat_val(")")
-            return node
-        elif self.peek_kind() == "NUM":
-            token = self.eat_kind("NUM")
-            return Number(token[1])
-        elif self.peek_kind() == "ID":
-            token = self.eat_kind("ID")
-            return Variable(token[1])
-        elif self.peek_val() == "not":
-            self.eat_val("not")
-            operand = self.parse_factor()
-            return UnaryOp("not", operand)
-        elif self.peek_val() == "-":
-            self.eat_val("-")
-            operand = self.parse_factor()
-            return UnaryOp("-", operand)
-        else:
-            raise SyntaxError(f"unexpected {self.current()!r} in Factor")
+        # Number literal
+        if self.peek_kind() == "NUM":
+            return Number(self.eat_kind("NUM")[1])
+        # String literal
+        if self.peek_kind() == "STRING":
+            return String(self.eat_kind("STRING")[1][1:-1])
+        # Array literal
+        if self.peek_kind() == "LBRACK":
+            self.eat_kind("LBRACK")
+            items = []
+            if self.peek_kind() != "RBRACK":
+                items.append(self.parse_expr())
+                while self.peek_kind() == "COMMA":
+                    self.eat_kind("COMMA")
+                    items.append(self.parse_expr())
+            self.eat_kind("RBRACK")
+            return ArrayLiteral(items)
+        # Function call or variable
+        if self.peek_kind() == "ID":
+            if (not self.at_eof() and
+                self.i + 1 < len(self.tokens) and
+                self.tokens[self.i + 1][0] == "LPAREN"):
+                name = self.eat_kind("ID")[1]
+                self.eat_kind("LPAREN")
+                args = []
+                if self.peek_kind() != "RPAREN":
+                    args.append(self.parse_expr())
+                    while self.peek_kind() == "COMMA":
+                        self.eat_kind("COMMA")
+                        args.append(self.parse_expr())
+                self.eat_kind("RPAREN")
+                return Call(name, args)
+            return Variable(self.eat_kind("ID")[1])
+        # Parentheses for grouping
+        if self.peek_kind() == "LPAREN":
+            self.eat_kind("LPAREN")
+            expr = self.parse_expr()
+            self.eat_kind("RPAREN")
+            return expr
+        raise SyntaxError(f"Unexpected token: {self.current()}")
 
     def parse_power(self):
-        """Parse exponentiation (right-associative)."""
-        left = self.parse_factor()
+        node = self.parse_factor()
+        while self.peek_kind() == "LBRACK":
+            self.eat_kind("LBRACK")
+            index = self.parse_expr()
+            self.eat_kind("RBRACK")
+            node = Index(node, index)
         if self.peek_val() == "^":
             op = self.eat_val("^")[1]
             right = self.parse_power()
-            return BinOp(left, op, right)
-        return left
+            return BinOp(node, op, right)
+        return node
 
     def parse_term(self):
         """Parse multiplication, division, and modulo."""
@@ -148,6 +180,22 @@ class Parser:
             node = BinOp(node, op, right)
         return node
 
+    def parse_array(self):
+        items = []
+        self.expect('LBRACK')
+        if not self.check('RBRACK'):
+            items.append(self.parse_expr())
+            while self.match('COMMA'):
+                items.append(self.parse_expr())
+        self.expect('RBRACK')
+        return ArrayLiteral(items)
+    
+    def parse_index(self, base):
+        self.expect('LBRACK')
+        index = self.parse_expr()
+        self.expect('RBRACK')
+        return Index(base, index)
+
     def parse_comparison(self):
         """Parse comparison operators."""
         node = self.parse_expr()
@@ -160,7 +208,7 @@ class Parser:
                 op = self.eat_kind("LE")[1]
             elif self.peek_kind() == "GE":
                 op = self.eat_kind("GE")[1]
-            right = self.parse_expr()
+            right = self.parse_expr()  # ✅ FIXED
             node = BinOp(node, op, right)
         return node
 
@@ -209,16 +257,33 @@ class Parser:
             return self.parse_or()
 
     def parse_assignment(self):
-        """Parse variable assignments."""
-        if (self.peek_kind() == "ID" and 
-            not self.at_eof() and 
-            self.i + 1 < len(self.tokens) and 
-            self.tokens[self.i + 1][1] == "="):
-            
+        # Assignment: a = value or a[expr] = value
+        if (self.peek_kind() == "ID" and
+            not self.at_eof() and
+            self.i + 1 < len(self.tokens) and
+            self.tokens[self.i + 1][0] == "ASSIGN"):
             name = self.eat_kind("ID")[1]
             self.eat_kind("ASSIGN")
             value = self.parse_while()
             return Assignment(name, value)
+        # Index assignment: a[expr][expr]... = value
+        elif (self.peek_kind() == "ID" and
+            not self.at_eof() and
+            self.i + 1 < len(self.tokens) and
+            self.tokens[self.i + 1][0] == "LBRACK"):
+            # Parse the full left-hand side as an expression (with all chained indexing)
+            lhs = self.parse_expr()
+            if self.peek_kind() == "ASSIGN":
+                self.eat_kind("ASSIGN")
+                expr = self.parse_while()
+                # Unpack the left-hand side to get the base and all indices
+                # Only support AssignIndex for a single index for now
+                if isinstance(lhs, Index):
+                    return AssignIndex(lhs.base, lhs.index, expr)
+                else:
+                    raise SyntaxError("Invalid assignment target")
+            else:
+                return lhs
         else:
             return self.parse_if()
 
@@ -226,7 +291,7 @@ class Parser:
         """Parse while loops."""
         if self.peek_kind() == "WHILE":
             self.eat_kind("WHILE")
-            condition = self.parse_statement()
+            condition = self.parse_comparison()
             self.eat_kind("COLON")
             body = self.parse_statement()
             return While(condition, body)

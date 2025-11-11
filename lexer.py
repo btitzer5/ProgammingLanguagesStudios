@@ -5,7 +5,8 @@ import re
 
 # Token specification
 SPEC = [
-    ("NUM", r"\d+"),
+    ("NUM", r"\d+(\.\d+)?"),
+    ("STRING", r"\"([^\"\\]|\\.)*\""),
     ("EQ", r"=="),
     ("LE", r"<="),
     ("GE", r">="),
@@ -23,7 +24,16 @@ SPEC = [
     ("RETURN", r"return\b"),
     ("ID",  r"[A-Za-z_]\w*"),
     ("ASSIGN", r"="),
-    ("OP",  r"[+\-*/^()%]"),
+    ("PLUS", r"\+"),
+    ("MINUS", r"-"),
+    ("MUL", r"\*"),
+    ("DIV", r"/"),
+    ("MOD", r"%"),
+    ("POW", r"\^"),
+    ("LBRACK", r"\["),
+    ("RBRACK", r"\]"),
+    ("LPAREN", r"\("),
+    ("RPAREN", r"\)"),
     ("COMMA", r","),
     ("COLON", r":"),
     ("SEMICOLON", r";"),

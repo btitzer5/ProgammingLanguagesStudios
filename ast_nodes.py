@@ -3,7 +3,10 @@
 
 class Number:
     def __init__(self, value):
-        self.value = int(value)
+        if '.' in value:
+            self.value = float(value)
+        else:
+            self.value = int(value)
     def __repr__(self):
         return f"Number({self.value})"
 
@@ -84,3 +87,30 @@ class Block:
         self.statements = statements
     def __repr__(self):
         return f"Block({self.statements})"
+    
+class ArrayLiteral:
+    def __init__(self, items):
+        self.items = items
+    def __repr__(self):
+        return f"ArrayLiteral({self.items})"
+    
+class Index:
+    def __init__(self, base, index):
+        self.base = base
+        self.index = index
+    def __repr__(self):
+        return f"Index({self.base}, {self.index})"
+    
+class AssignIndex:
+    def __init__(self, base, index, expr):
+        self.base = base
+        self.index = index
+        self.expr = expr
+    def __repr__(self):
+        return f"AssignIndex({self.base}, {self.index}, {self.expr})"
+
+class String:
+    def __init__(self, value):
+        self.value = value
+    def __repr__(self):
+        return f"String({self.value!r})"
