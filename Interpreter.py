@@ -1,7 +1,7 @@
 # Gambl/new_interpreter.py
 # Evaluation and Interpretation Logic
 
-from ast_nodes import Number, Variable, BinOp, UnaryOp, Assignment, If, While, FunctionDef, Call, FunctionValue, ReturnValue, Block, ArrayLiteral, Index, AssignIndex, String
+from ast_nodes import Number, Variable, BinOp, UnaryOp, Assignment, If, While, FunctionDef, Call, FunctionValue, ReturnValue, Block, ArrayLiteral, Index, AssignIndex, String, Raise, Try, Catch
 from environment import Env
 
 def evaluate(node, env):
@@ -76,6 +76,16 @@ def evaluate(node, env):
             return evaluate(node.then_branch, env) if node.then_branch else None
         else:
             return evaluate(node.else_branch, env) if node.else_branch else None
+    elif isinstance(node, Raise):
+        exception = evaluate(node.exception, env)
+        raise RuntimeError(exception)
+    
+    elif isinstance(node, Try):
+        try:
+            return evaluate(node.try_block, env)
+        except Exception as e:
+            env.define(node.catch.exception_var, str(e))
+            return evaluate(node.catch.block, env)
     
     elif isinstance(node, UnaryOp):
         operand = evaluate(node.operand, env)

@@ -1,6 +1,4 @@
-# Gambl/Parser.py
-# Parsing Logic - Converts tokens to Abstract Syntax Tree
-from ast_nodes import Number, Variable, BinOp, UnaryOp, Assignment, If, While, FunctionDef, Call, FunctionValue, ReturnValue, Block, ArrayLiteral, Index, AssignIndex, String
+from ast_nodes import Number, Variable, BinOp, UnaryOp, Assignment, If, While, FunctionDef, Call, FunctionValue, ReturnValue, Block, ArrayLiteral, Index, AssignIndex, String, Raise, Try, Catch
 from lexer import lex
 
 class Parser:
@@ -11,7 +9,7 @@ class Parser:
     
     def __init__(self):
         self.tokens = []
-        self.i = 0  # cursor into tokens
+        self.i = 0 
     
     def at_eof(self):
         """Check if we've reached the end of the token stream."""
@@ -208,7 +206,7 @@ class Parser:
                 op = self.eat_kind("LE")[1]
             elif self.peek_kind() == "GE":
                 op = self.eat_kind("GE")[1]
-            right = self.parse_expr()  # ✅ FIXED
+            right = self.parse_expr()  
             node = BinOp(node, op, right)
         return node
 
@@ -276,8 +274,6 @@ class Parser:
             if self.peek_kind() == "ASSIGN":
                 self.eat_kind("ASSIGN")
                 expr = self.parse_while()
-                # Unpack the left-hand side to get the base and all indices
-                # Only support AssignIndex for a single index for now
                 if isinstance(lhs, Index):
                     return AssignIndex(lhs.base, lhs.index, expr)
                 else:
@@ -358,6 +354,52 @@ class Parser:
         else:
             return self.parse_return()
 
+    def parse_raise(self):
+        """Parse raise statements."""
+        if self.peek_kind() == "RAISE":
+            self.eat_kind("RAISE")
+            exception = self.parse_or()
+            return Raise(exception)
+        else:
+            return self.parse_function_def()
+
+    def parse_try_catch(self):
+        """Parse try-catch blocks."""
+        self.eat_kind("TRY")
+        self.eat_kind("COLON")
+        try_statements = []
+        try_statements.append(self.parse_statement())
+        while self.peek_kind() == "SEMICOLON":
+            self.eat_kind("SEMICOLON")
+            if self.peek_kind() == "CATCH":
+                break
+            if not self.at_eof():
+                try_statements.append(self.parse_statement())
+
+        if len(try_statements) == 1:
+            try_block = try_statements[0]
+        else:
+            try_block = Block(try_statements)
+            
+        self.eat_kind("CATCH")
+        exception_var = self.eat_kind("ID")[1]
+        self.eat_kind("COLON")
+
+        catch_statements = []
+        catch_statements.append(self.parse_statement())
+
+        while self.peek_kind() == "SEMICOLON":
+            self.eat_kind("SEMICOLON")
+            if self.at_eof() or self.peek_kind() in ["DEF", "TRY", "IF", "WHILE"]:
+                break
+            catch_statements.append(self.parse_statement())
+            
+        if len(catch_statements) == 1:
+            catch_block = catch_statements[0]
+        else:
+            catch_block = Block(catch_statements)
+        return Try(try_block, Catch(exception_var, catch_block))
+            
     def parse_statement(self):
         """Parse any statement type."""
         if self.peek_kind() == "DEF":
@@ -366,6 +408,12 @@ class Parser:
             return self.parse_return()
         elif self.peek_kind() == "WHILE":
             return self.parse_while()
+        elif self.peek_kind() == "IF":
+            return self.parse_if()
+        elif self.peek_kind() == "TRY":
+            return self.parse_try_catch()
+        elif self.peek_kind() == "RAISE":
+            return self.parse_raise()
         else:
             return self.parse_assignment()
 
@@ -392,7 +440,6 @@ class Parser:
                 self.eat_val(";")
             else:
                 break
-        
         # Return Block if multiple statements, single statement otherwise
         if len(statements) == 1:
             return statements[0]

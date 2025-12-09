@@ -114,3 +114,23 @@ class String:
         self.value = value
     def __repr__(self):
         return f"String({self.value!r})"
+    
+class Try:
+    def __init__(self, try_block, catch):
+        self.try_block = try_block
+        self.catch = catch
+    def __repr__(self):
+        return f"Try({self.try_block}, {self.catch})"
+    
+class Catch:
+    def __init__(self, exception_var, block):
+        self.exception_var = exception_var
+        self.block = block
+    def __repr__(self):
+        return f"Catch({self.exception_var!r}, {self.block})"
+    
+class Raise:
+    def __init__(self, expr):
+        self.expr = expr
+    def __repr__(self):
+        return f"Raise({self.expr})"
